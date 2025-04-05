@@ -6,7 +6,7 @@
 # Run Application
  *npm run start*
 
-# Create .env file there need to provide
+# Create .env file for required credentials 
  -  `DB_HOST`
 -  `DB_USER`
 - `DB_PASSWORD`
