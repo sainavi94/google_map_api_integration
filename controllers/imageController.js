@@ -1,37 +1,71 @@
 const Image = require('../models/imageModel');
 const exifr = require('exifr');
 const { AppError } = require('../utils/errorHandler');
+const axios = require('axios');
 
 class ImageController {
-  async uploadImage(req, res, next) {
+
+  getAddressFromCoordinates =  async (latitude, longitude) => {
+    try {
+      const url = process.env.GOOGLE_API_ENDPOINT;
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        throw new AppError('Google Maps API key is missing', 500);
+      }
+
+      const response = await axios.get(`${url}?latlng=${latitude},${longitude}&key=${apiKey}`);
+
+
+      const data = response.data;
+      if (data.status === 'OK' && data.results.length > 0) {
+        return data.results[0].formatted_address;
+      } else {
+        console.log('Geocoding failed:', data.status);
+        return 'Address not found';
+      }
+    } catch (error) {
+      console.error('Geocoding error:', error.message);
+      return 'Address not found';
+    }
+  }
+
+  uploadImage = async (req, res, next) => {
     try {
       if (!req.file) {
         throw new AppError('No image uploaded', 400);
       }
 
-      // Extract metadata from image
-      const metadata = await exifr.parse(req.file.path);
-      console.log("metadata", metadata)
-      
-      if (!metadata?.latitude || !metadata?.longitude) {
+      const metadata = await exifr.parse(req.file.path, { 
+        translateValues: true, 
+        translateKeys: true,
+        mergeOutput: true,
+        tiff: true,
+        exif: true,
+        gps: true 
+      });
+
+      let latitude = metadata?.latitude;
+      let longitude = metadata?.longitude;
+      let address = 'No address provided';
+
+      if (!latitude || !longitude) {
         throw new AppError('Image missing required GPS coordinates', 400);
       }
 
-      // For your sample image, the address might be in the Description or Title
-      const address = metadata.Description || metadata.Title || 'No address provided';
+      // Getting the address using Google Maps API
+      address = await this.getAddressFromCoordinates(latitude, longitude);
 
-      // Save to database
       const image = await Image.create({
         name: metadata.ImageDescription || req.file.originalname,
-        latitude: metadata.latitude,
-        longitude: metadata.longitude,
-        address: address,
+        latitude,
+        longitude,
+        address,
         filePath: req.file.path,
         metadata: JSON.stringify(metadata)
       });
 
       res.status(201).json({
-        status: 'success',
+        status: "success",
         data: {
           id: image.id,
           name: image.name,
@@ -45,7 +79,6 @@ class ImageController {
       next(error);
     }
   }
-
   async getImages(req, res, next) {
     try {
       const {
